@@ -192,4 +192,42 @@ function resetFlow() {
 load();
 </script>
 </body>
-</html>
+</html><div id="avis-section" style="max-width:720px;margin:0 auto;padding:0 20px 64px;">
+  <div class="section-title">Avis clients</div>
+  <div id="avis-liste"></div>
+  <div class="card" style="flex-direction:column;align-items:stretch;background:#FBF9F3;border:1px solid #E3DDCC;">
+    <div class="field"><label>Votre nom</label><input id="avis-nom"></div>
+    <div class="field"><label>Note (1 à 5)</label><input id="avis-note" type="number" min="1" max="5" value="5"></div>
+    <div class="field"><label>Votre commentaire</label><input id="avis-commentaire"></div>
+    <button class="btn-primary" id="avis-envoyer">Laisser un avis</button>
+    <div id="avis-erreur" class="error-msg"></div>
+  </div>
+</div>
+<script>
+async function chargerAvis() {
+  const res = await fetch("/api/reviews");
+  const avis = await res.json();
+  const el = document.getElementById("avis-liste");
+  el.innerHTML = "";
+  if (avis.length === 0) el.innerHTML = '<div class="empty-note">Aucun avis pour l\'instant.</div>';
+  avis.slice().reverse().forEach(a => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div style="flex:1;"><div style="font-weight:600;">${a.nom} — ${"★".repeat(a.note)}${"☆".repeat(5-a.note)}</div><div style="font-size:13px;color:#8A8271;margin-top:2px;">${a.commentaire}</div></div>`;
+    el.appendChild(card);
+  });
+}
+document.getElementById("avis-envoyer").onclick = async () => {
+  const nom = document.getElementById("avis-nom").value.trim();
+  const note = document.getElementById("avis-note").value;
+  const commentaire = document.getElementById("avis-commentaire").value.trim();
+  const err = document.getElementById("avis-erreur");
+  err.textContent = "";
+  if (!nom || !note) { err.textContent = "Merci de renseigner votre nom et une note."; return; }
+  const res = await fetch("/api/reviews", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ nom, note, commentaire }) });
+  if (res.ok) { document.getElementById("avis-nom").value = ""; document.getElementById("avis-commentaire").value = ""; chargerAvis(); }
+  else { err.textContent = "Erreur, réessayez."; }
+};
+chargerAvis();
+</script>
+
