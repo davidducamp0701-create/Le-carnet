@@ -1,0 +1,181 @@
+<script>
+const motDePasse = prompt("Mot de passe :");
+if (motDePasse !== "D@vflo44") {
+  alert("Mot de passe incorrect.");
+  window.location.href = "index.html";
+}
+</script>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le Carnet — Gestion</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="brand-title">Le Carnet</div>
+    <div class="brand-sub">Espace de gestion</div>
+  </div>
+  <a class="nav-link" href="index.html">Voir la page client</a>
+</div>
+
+<div class="container">
+  <div class="section-title">Vos prestations</div>
+  <div class="section-subtitle">Ajoutez, modifiez ou retirez ce que vos clients peuvent réserver.</div>
+  <div id="services-list"></div>
+  <div id="service-form-zone"></div>
+  <button class="btn-primary" id="add-service-btn" style="margin-top:6px;">+ Ajouter une prestation</button>
+
+  <div style="height:36px;"></div>
+
+  <div class="section-title">Rendez-vous</div>
+  <div class="section-subtitle">Tous les rendez-vous réservés par vos clients.</div>
+  <div id="reservations-list"></div>
+
+  <div style="height:36px;"></div>
+
+  <div class="section-title">Avis clients</div>
+  <div id="avis-gestion"></div>
+</div>
+
+<script>
+let services = [];
+let reservations = [];
+let editingId = null;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Erreur serveur");
+  return data;
+}
+
+async function loadAll() {
+  services = await api("/api/services");
+  reservations = await api("/api/reservations");
+  renderServices();
+  renderReservations();
+  chargerAvisAdmin();
+}
+
+function renderServices() {
+  const el = document.getElementById("services-list");
+  el.innerHTML = "";
+  if (services.length === 0) {
+    el.innerHTML = `<div class="empty-note">Aucune prestation pour l'instant.</div>`;
+  }
+  services.forEach(s => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div style="flex:1;">
+        <div style="font-weight:600;font-size:15px;">${s.nom}</div>
+        <div style="font-size:13px;color:#8A8271;margin-top:2px;">${s.duree} min${s.description ? " — " + s.description : ""}</div>
+      </div>
+      <button class="btn-icon" data-edit="${s.id}">✎</button>
+      <button class="btn-icon danger" data-del="${s.id}">🗑</button>`;
+    el.appendChild(card);
+  });
+  el.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openForm(services.find(s => s.id === b.dataset.edit)));
+  el.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    await api("/api/services/" + b.dataset.del, { method: "DELETE" });
+    loadAll();
+  });
+}
+
+function openForm(service) {
+  editingId = service ? service.id : null;
+  const zone = document.getElementById("service-form-zone");
+  zone.innerHTML = `
+    <div class="card" style="flex-direction:column;align-items:stretch;background:#FBF9F3;border:1px solid #D8CFB8;">
+      <div class="field"><label>Nom de la prestation</label><input id="sf-nom" value="${service ? service.nom : ''}" placeholder="Ex. Coupe & brushing"></div>
+      <div class="field"><label>Durée (minutes)</label><input id="sf-duree" type="number" value="${service ? service.duree : 30}"></div>
+      <div class="field"><label>Description (optionnel)</label><input id="sf-desc" value="${service ? (service.description || '') : ''}"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" id="sf-save">Enregistrer</button>
+        <button class="btn-ghost" id="sf-cancel">Annuler</button>
+      </div>
+    </div>`;
+  document.getElementById("sf-save").onclick = saveService;
+  document.getElementById("sf-cancel").onclick = () => { zone.innerHTML = ""; editingId = null; };
+}
+
+async function saveService() {
+  const nom = document.getElementById("sf-nom").value.trim();
+  const duree = Number(document.getElementById("sf-duree").value) || 30;
+  const description = document.getElementById("sf-desc").value.trim();
+  if (!nom) return;
+
+  if (editingId) {
+    await api("/api/services/" + editingId, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom, duree, description })
+    });
+  } else {
+    await api("/api/services", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom, duree, description })
+    });
+  }
+  document.getElementById("service-form-zone").innerHTML = "";
+  editingId = null;
+  loadAll();
+}
+
+document.getElementById("add-service-btn").onclick = () => openForm(null);
+
+function formatDate(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function renderReservations() {
+  const el = document.getElementById("reservations-list");
+  el.innerHTML = "";
+  const sorted = [...reservations].sort((a,b) => (a.date + a.heure).localeCompare(b.date + b.heure));
+  if (sorted.length === 0) {
+    el.innerHTML = `<div class="empty-note">Aucun rendez-vous pour l'instant.</div>`;
+  }
+  sorted.forEach(r => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div style="flex:1;">
+        <div style="font-weight:600;font-size:15px;">${r.serviceNom} — ${r.nom}</div>
+        <div style="font-size:13px;color:#8A8271;margin-top:2px;">${formatDate(r.date)} à ${r.heure} · ${r.email}${r.telephone ? " · " + r.telephone : ""}</div>
+        <div style="margin-top:6px;"><span class="pill">Confirmé</span></div>
+      </div>
+      <button class="btn-icon danger" data-del="${r.id}">🗑</button>`;
+    el.appendChild(card);
+  });
+  el.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    await api("/api/reservations/" + b.dataset.del, { method: "DELETE" });
+    loadAll();
+  });
+}
+
+async function chargerAvisAdmin() {
+  const avis = await api("/api/reviews");
+  const el = document.getElementById("avis-gestion");
+  el.innerHTML = "";
+  if (avis.length === 0) el.innerHTML = '<div class="empty-note">Aucun avis.</div>';
+  avis.forEach(a => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div style="flex:1;"><div style="font-weight:600;">${a.nom} — ${"★".repeat(a.note)}${"☆".repeat(5-a.note)}</div><div style="font-size:13px;color:#8A8271;">${a.commentaire}</div></div><button class="btn-icon danger" data-delavis="${a.id}">🗑</button>`;
+    el.appendChild(card);
+  });
+  el.querySelectorAll("[data-delavis]").forEach(b => b.onclick = async () => {
+    await api("/api/reviews/" + b.dataset.delavis, { method: "DELETE" });
+    chargerAvisAdmin();
+  });
+}
+
+loadAll();
+</script>
+</body>
+</html>
