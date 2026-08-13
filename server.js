@@ -97,4 +97,26 @@ app.delete("/api/reservations/:id", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur lancé sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Serveur lancé sur le port ${PORT}`));app.get("/api/reviews", (req, res) => {
+  const data = readData();
+  res.json(data.reviews || []);
+});
+
+app.post("/api/reviews", (req, res) => {
+  const data = readData();
+  if (!data.reviews) data.reviews = [];
+  const { nom, note, commentaire } = req.body;
+  if (!nom || !note) return res.status(400).json({ error: "Champs manquants." });
+  const avis = { id: nanoid(8), nom, note: Number(note), commentaire: commentaire || "", date: new Date().toISOString() };
+  data.reviews.push(avis);
+  writeData(data);
+  res.json(avis);
+});
+
+app.delete("/api/reviews/:id", (req, res) => {
+  const data = readData();
+  data.reviews = (data.reviews || []).filter(r => r.id !== req.params.id);
+  writeData(data);
+  res.json({ ok: true });
+});
+
