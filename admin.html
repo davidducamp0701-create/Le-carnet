@@ -147,7 +147,27 @@ function renderReservations() {
     el.appendChild(card);
   });
   el.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
-    await api("/api/reservations/" + b.dataset.del, { method: "DELETE" });
+    await api("/api/reservations/" + b.dataset.del, { method: "DELETE" });<div style="height:36px;"></div>
+<div class="section-title">Avis clients</div>
+<div id="avis-gestion"></div>
+<script>
+async function chargerAvisAdmin() {
+  const res = await fetch("/api/reviews");
+  const avis = await res.json();
+  const el = document.getElementById("avis-gestion");
+  el.innerHTML = "";
+  if (avis.length === 0) el.innerHTML = '<div class="empty-note">Aucun avis.</div>';
+  avis.forEach(a => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div style="flex:1;"><div style="font-weight:600;">${a.nom} — ${"★".repeat(a.note)}${"☆".repeat(5-a.note)}</div><div style="font-size:13px;color:#8A8271;">${a.commentaire}</div></div><button class="btn-icon danger" data-del="${a.id}">🗑</button>`;
+    el.appendChild(card);
+  });
+  el.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { await fetch("/api/reviews/" + b.dataset.del, { method: "DELETE" }); chargerAvisAdmin(); });
+}
+chargerAvisAdmin();
+</script>
+
     loadAll();
   });
 }
