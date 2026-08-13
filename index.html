@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le Carnet — Réserver un rendez-vous</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="brand-title">Le Carnet</div>
+    <div class="brand-sub">Prise de rendez-vous</div>
+  </div>
+  <a class="nav-link" href="admin.html">Espace gestion</a>
+</div>
+
+<div class="container">
+  <div class="stepper" id="stepper"></div>
+  <div id="content"></div>
+</div>
+
+<script>
+const SLOTS = ["09:00","10:00","11:00","14:00","15:00","16:00","17:00"];
+let step = 1;
+let services = [];
+let reservations = [];
+let selected = { service: null, date: todayISO(), heure: null };
+let infos = { nom: "", email: "", telephone: "" };
+let confirmed = null;
+
+function todayISO() { return new Date().toISOString().slice(0,10); }
+
+function formatDate(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Erreur serveur");
+  return data;
+}
+
+async function load() {
+  services = await api("/api/services");
+  reservations = await api("/api/reservations");
+  render();
+}
+
+function renderStepper() {
+  const labels = ["Prestation", "Créneau", "Vos coordonnées"];
+  document.getElementById("stepper").innerHTML = labels.map((l,i) => `
+    <div class="step">
+      <div class="bar ${step > i ? 'done' : ''}"></div>
+      <div class="label ${step === i+1 ? 'active' : ''}">${l}</div>
+    </div>`).join("");
+}
+
+function render() {
+  renderStepper();
+  const el = document.getElementById("content");
+
+  if (step === 4 && confirmed) {
+    el.innerHTML = `
+      <div class="confirm-box">
+        <div class="confirm-icon">✓</div>
+        <div class="section-title">Rendez-vous confirmé</div>
+        <div class="section-subtitle">${confirmed.serviceNom} · ${formatDate(confirmed.date)} à ${confirmed.heure}</div>
+        <div class="empty-note">Un email de confirmation a été envoyé à ${confirmed.email}.</div>
+        <button class="btn-ghost" onclick="resetFlow()" style="margin-top:20px;">Prendre un autre rendez-vous</button>
+      </div>`;
+    return;
+  }
+
+  if (step === 1) {
+    el.innerHTML = `
+      <div class="section-title">Choisissez une prestation</div>
+      <div id="list"></div>`;
+    const list = document.getElementById("list");
+    if (services.length === 0) {
+      list.innerHTML = `<div class="empty-note">Aucune prestation disponible pour le moment.</div>`;
+      return;
+    }
+    services.forEach(s => {
+      const card = document.createElement("button");
+      card.className = "card selectable";
+      card.innerHTML = `<div style="flex:1;">
+          <div style="font-weight:600;font-size:15px;">${s.nom}</div>
+          <div style="font-size:13px;color:#8A8271;margin-top:2px;">${s.duree} min${s.description ? " — " + s.description : ""}</div>
+        </div>`;
+      card.onclick = () => { selected.service = s; step = 2; render(); };
+      list.appendChild(card);
+    });
+    return;
+  }
+
+  if (step === 2) {
+    el.innerHTML = `
+      <div class="section-title">Choisissez un créneau</div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="date-input" min="${todayISO()}" value="${selected.date}">
+      </div>
+      <div class="slots" id="slots"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="step=1;render()">Retour</button>
+        <button class="btn-primary" id="continue-btn" disabled>Continuer</button>
+      </div>`;
+    document.getElementById("date-input").onchange = (e) => { selected.date = e.target.value; selected.heure = null; renderSlots(); };
+    renderSlots();
+    document.getElementById("continue-btn").onclick = () => { step = 3; render(); };
+    return;
+  }
+
+  if (step === 3) {
+    el.innerHTML = `
+      <div class="section-title">Vos coordonnées</div>
+      <div class="card" style="flex-direction:column;align-items:stretch;background:#FBF9F3;border:1px solid #E3DDCC;">
+        <div style="font-weight:600;">${selected.service.nom}</div>
+        <div style="font-size:13px;color:#8A8271;">${formatDate(selected.date)} à ${selected.heure} · ${selected.service.duree} min</div>
+      </div>
+      <div class="field"><label>Nom complet</label><input id="f-nom" value="${infos.nom}"></div>
+      <div class="field"><label>Email</label><input id="f-email" type="email" value="${infos.email}"></div>
+      <div class="field"><label>Téléphone (optionnel)</label><input id="f-tel" value="${infos.telephone}"></div>
+      <div id="error" class="error-msg"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="step=2;render()">Retour</button>
+        <button class="btn-primary" id="confirm-btn">Confirmer le rendez-vous</button>
+      </div>`;
+    document.getElementById("confirm-btn").onclick = submitReservation;
+    return;
+  }
+}
+
+function renderSlots() {
+  const el = document.getElementById("slots");
+  const taken = reservations.filter(r => r.date === selected.date).map(r => r.heure);
+  el.innerHTML = "";
+  SLOTS.forEach(h => {
+    const btn = document.createElement("div");
+    const isTaken = taken.includes(h);
+    btn.className = "slot" + (isTaken ? " taken" : selected.heure === h ? " selected" : "");
+    btn.textContent = h;
+    if (!isTaken) btn.onclick = () => { selected.heure = h; renderSlots(); document.getElementById("continue-btn").disabled = false; };
+    el.appendChild(btn);
+  });
+  document.getElementById("continue-btn").disabled = !selected.heure;
+}
+
+async function submitReservation() {
+  infos.nom = document.getElementById("f-nom").value.trim();
+  infos.email = document.getElementById("f-email").value.trim();
+  infos.telephone = document.getElementById("f-tel").value.trim();
+  const errorEl = document.getElementById("error");
+  errorEl.textContent = "";
+
+  if (!infos.nom || !infos.email) {
+    errorEl.textContent = "Merci de renseigner votre nom et votre email.";
+    return;
+  }
+
+  try {
+    confirmed = await api("/api/reservations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serviceId: selected.service.id,
+        date: selected.date,
+        heure: selected.heure,
+        ...infos
+      })
+    });
+    step = 4;
+    render();
+  } catch (e) {
+    errorEl.textContent = e.message;
+    reservations = await api("/api/reservations");
+  }
+}
+
+function resetFlow() {
+  step = 1;
+  selected = { service: null, date: todayISO(), heure: null };
+  infos = { nom: "", email: "", telephone: "" };
+  confirmed = null;
+  load();
+}
+
+load();
+</script>
+</body>
+</html>
